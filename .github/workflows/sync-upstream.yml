@@ -1,0 +1,95 @@
+name: Sync with upstream
+
+# Keeps this fork up to date with theskumar/python-dotenv by merging upstream/main
+# into main on a schedule. The fork's own changes are kept because a merge (not a
+# reset) is used. If the merge conflicts or the tests fail, nothing is pushed and
+# an issue is opened instead.
+#
+# Note: GITHUB_TOKEN cannot push commits that modify files in .github/workflows.
+# If upstream changes a workflow, add a personal access token with the "repo" and
+# "workflow" scopes as the repository secret SYNC_TOKEN.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository != 'theskumar/python-dotenv'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Merge upstream/main
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/theskumar/python-dotenv.git
+          git fetch upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit upstream/main -m "Merge upstream/main into main"; then
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.merge.outputs.changed == 'true'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.x"
+
+      - name: Run tests
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . -r requirements.txt
+          python -m pytest -q
+
+      - name: Push
+        if: steps.merge.outputs.changed == 'true'
+        run: git push origin HEAD:main
+
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFLICT: ${{ steps.merge.outputs.conflict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Upstream sync failed"
+          if [ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')" ]; then
+            echo "An open issue already exists."
+            exit 0
+          fi
+          if [ "$CONFLICT" = "true" ]; then
+            reason="Merging upstream/main caused conflicts. Please resolve them manually."
+          else
+            reason="The merge succeeded, but the tests or the push failed."
+          fi
+          gh issue create --title "$title" --body "$reason
+
+          Run: $RUN_URL"

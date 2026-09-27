@@ -568,7 +568,8 @@ def test_load_dotenv_no_file_verbose():
 
     assert result is False
     mock_info.assert_called_once_with(
-        "python-dotenv could not find configuration file %s.", ".does_not_exist"
+        "python-dotenv could not find configuration file %s.",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".does_not_exist"),
     )
 
 
@@ -756,3 +757,42 @@ def test_dotenv_values_empty_value_with_inline_comment(string, expected):
     result = dotenv.dotenv_values(stream=io.StringIO(string))
 
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "dotenv.load_dotenv(dotenv_path=Path('../.env'))\nprint(os.environ['a'])",
+        "dotenv.load_dotenv('../.env')\nprint(os.environ['a'])",
+        "print(dotenv.dotenv_values(Path('../.env'))['a'])",
+    ],
+)
+def test_relative_dotenv_path_is_resolved_from_caller_file(tmp_path, call):
+    (tmp_path / ".env").write_text("a=from_caller_parent")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    code_path = src_dir / "code.py"
+    code_path.write_text(
+        "import os\nfrom pathlib import Path\nimport dotenv\n" + call + "\n"
+    )
+    # Run from an unrelated directory that has its own ../.env to make sure
+    # the current working directory is not used.
+    other = tmp_path / "other" / "cwd"
+    other.mkdir(parents=True)
+    (tmp_path / "other" / ".env").write_text("a=from_cwd_parent")
+
+    result = subprocess.run(
+        [sys.executable, str(code_path)],
+        cwd=str(other),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == "from_caller_parent\n"
+
+
+def test_absolute_dotenv_path_is_unchanged(dotenv_path):
+    dotenv_path.write_text("a=b")
+
+    assert dotenv.main._resolve_relative_to_caller(str(dotenv_path)) == str(dotenv_path)

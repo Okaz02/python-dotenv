@@ -385,6 +385,34 @@ def find_dotenv(
     return ""
 
 
+def _resolve_relative_to_caller(dotenv_path: StrPath) -> StrPath:
+    """
+    Resolve a relative `dotenv_path` against the directory of the file that called
+    `load_dotenv()` / `dotenv_values()`, instead of the current working directory.
+
+    The path is returned unchanged when it is absolute, or when there is no caller
+    file to anchor to (REPL, IPython, frozen apps, `python -c`, or calls made from
+    within the dotenv package itself such as the CLI).
+    """
+    if os.path.isabs(dotenv_path):
+        return dotenv_path
+    if getattr(sys, "frozen", False):
+        return dotenv_path
+
+    # Frame 0 is this helper, frame 1 is load_dotenv/dotenv_values, frame 2 is the caller.
+    frame = sys._getframe(2)
+    caller_file = frame.f_code.co_filename
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+
+    if not os.path.isfile(caller_file):
+        return dotenv_path
+    caller_dir = os.path.dirname(os.path.abspath(caller_file))
+    if caller_dir == package_dir:
+        return dotenv_path
+
+    return os.path.join(caller_dir, os.fspath(dotenv_path))
+
+
 def load_dotenv(
     dotenv_path: Optional[StrPath] = None,
     stream: Optional[IO[str]] = None,
@@ -396,7 +424,9 @@ def load_dotenv(
     """Parse a .env file and then load all the variables found as environment variables.
 
     Parameters:
-        dotenv_path: Absolute or relative path to .env file.
+        dotenv_path: Absolute or relative path to .env file. A relative path is
+            resolved against the directory of the calling file, not the current
+            working directory.
         stream: Text stream (such as `io.StringIO`) with .env content, used if
             `dotenv_path` is `None`.
         verbose: Whether to output a warning the .env file is missing.
@@ -423,6 +453,8 @@ def load_dotenv(
 
     if dotenv_path is None and stream is None:
         dotenv_path = find_dotenv()
+    elif dotenv_path is not None:
+        dotenv_path = _resolve_relative_to_caller(dotenv_path)
 
     dotenv = DotEnv(
         dotenv_path=dotenv_path,
@@ -450,7 +482,9 @@ def dotenv_values(
     `{"foo": None}`
 
     Parameters:
-        dotenv_path: Absolute or relative path to the .env file.
+        dotenv_path: Absolute or relative path to the .env file. A relative path is
+            resolved against the directory of the calling file, not the current
+            working directory.
         stream: `StringIO` object with .env content, used if `dotenv_path` is `None`.
         verbose: Whether to output a warning if the .env file is missing.
         interpolate: Whether to interpolate variables using POSIX variable expansion.
@@ -461,6 +495,8 @@ def dotenv_values(
     """
     if dotenv_path is None and stream is None:
         dotenv_path = find_dotenv()
+    elif dotenv_path is not None:
+        dotenv_path = _resolve_relative_to_caller(dotenv_path)
 
     return DotEnv(
         dotenv_path=dotenv_path,

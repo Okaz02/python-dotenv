@@ -1,3 +1,20 @@
+> [!IMPORTANT]
+> **このフォークについて / About this fork**
+>
+> 本家 python-dotenv では `load_dotenv(dotenv_path=Path("../.env"))` のように相対パスを渡すと、
+> **コマンドを実行したカレントディレクトリ** を基準に解決されてしまいます。
+> このフォークではその問題を修正し、相対パスは **`load_dotenv()` / `dotenv_values()` を呼び出したファイルのあるディレクトリ** を基準に解決されます。
+> どこから `python` を実行しても、同じ `.env` が読み込まれます。
+>
+> In upstream python-dotenv, a relative `dotenv_path` is resolved against the current
+> working directory. In this fork it is resolved against the directory of the file that
+> calls `load_dotenv()` / `dotenv_values()`. Absolute paths, the REPL / IPython, and the
+> `dotenv` CLI behave as before.
+>
+> このフォークは GitHub Actions ([sync-upstream.yml](.github/workflows/sync-upstream.yml))
+> により、本家 [theskumar/python-dotenv](https://github.com/theskumar/python-dotenv) の更新を
+> 6 時間ごとに自動でマージしています。
+
 # python-dotenv
 
 [![Build Status][build_status_badge]][build_status_link]
