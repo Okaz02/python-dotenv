@@ -1,10 +1,2 @@
-bumpversion
-click
-ipython
-pytest-cov
-pytest>=9.0.3
-tox
-wheel
+pytest
 ruff
-build
-pre-commit
